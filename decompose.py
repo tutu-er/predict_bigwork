@@ -11,47 +11,93 @@ from scipy.optimize import nnls
 from data import Data
 
 class KSVD:
-    def __init__(self, n_components, D_init):
-        self.D = D_init
+    def __init__(self, n_components, data):
+
+        self.D = self.random_init_D()
+        self.X = data
         self.n_components = n_components
+        self.A = self.data_focuss(self.D, self.X)
 
+    def fit(self, X):
+        n_components = 10
 
-import numpy as np
+        D = np.random.rand(n_components, data.T)
 
+        max_interation = 20
+        for j in range(max_interation):
 
-def focuss_plus(A, y, lambda_max=1e3, p=1, max_iter=100, eps=1e-6):
-    """
-    FOCUSS算法实现
-    参数:
-        A : 测量矩阵 (m x n, m < n)
-        y : 观测向量 (m x 1)
-        p : 权重指数 (默认1)
-        max_iter : 最大迭代次数
-        eps : 收敛阈值
-    返回:
-        x : 稀疏解 (n x 1)
-    """
-    m, n = A.shape
-    x = np.linalg.pinv(A) @ y  # 初始化解
-    prev_x = x.copy()
+            self.data_focuss(X,self.D)
 
-    for _ in range(max_iter):
-        # 构建权重矩阵 (避免除零)
-        abs_x = np.abs(x)
-        abs_x[abs_x < 1e-10] = 1e-10  # 防止零值导致权重矩阵奇异
-        W = np.diag(abs_x ** (2 - p))
+            for k in range(n_components):
+                non_zeros_set = A[:, k] > 0
+                non_zeros_set_index = np.where(non_zeros_set)
+                if any(non_zeros_set):
+                    E_mat = X - A @ D + A[:, k].reshape(-1, 1) @ D[k, :].reshape(1, -1)
 
-        lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
-        # 更新解
-        x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
+                    E_mat_restricted = E_mat[non_zeros_set, :]
 
-        x[x < 0] = 0
-        # 检查收敛
-        if np.linalg.norm(x - prev_x) < eps:
-            break
+                    U, S, VT = np.linalg.svd(E_mat_restricted)
+
+                    a = U[:, 0]
+                    d = VT[0, :]
+
+                    if np.sum(a > 0) < np.sum(a < 0):
+                        a = -a
+                        d = -d
+
+                    a[a < 0] = 0
+                    d[d < 0] = 0
+
+                    a = a.reshape(1, -1)
+                    d = d.reshape(-1, 1)
+
+                    max_interation_svd = 3
+                    for jj in range(max_interation_svd):
+                        d = (a @ E_mat_restricted) / (a @ a.T)
+                        if np.sum(d > 0) < np.sum(d < 0):
+                            a = -a
+                            d = -d
+                        d[d < 0] = 0
+                        d = d.reshape(-1, 1)
+                        a = (E_mat_restricted @ d) / (d.T @ d)
+                        if np.sum(a > 0) < np.sum(a < 0):
+                            a = -a
+                            d = -d
+                        a[a < 0] = 0
+                        a = a.reshape(1, -1)
+
+                    D[k, :] = d.T
+                    A[non_zeros_set, k] = a.T.reshape(-1)
+
+    def data_focuss(self, D, X):
+        A = np.zeros((X.shape[0], n_components))
+        for i in range(len(data.row_all_right)):
+            A[i, :] = self.focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=100, eps=1e-6)
+        
+        return A
+
+    def focuss_plus(self, A, y, lambda_max=1e3, p=1, max_iter=100, eps=1e-6):
+        m, n = A.shape
+        x = np.linalg.pinv(A) @ y  # 初始化解
         prev_x = x.copy()
 
-    return x
+        for _ in range(max_iter):
+            abs_x = np.abs(x)
+            abs_x[abs_x < 1e-10] = 1e-10
+            W = np.diag(abs_x ** (2 - p))
+            W[W < 1e-8] = 0
+
+            lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
+            # 更新解
+            x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
+
+            x[x < 0] = 0
+            # 检查收敛
+            if np.linalg.norm(x - prev_x) < eps:
+                break
+            prev_x = x.copy()
+
+        return x
 
 if __name__ == "__main__":
 
@@ -112,63 +158,7 @@ if __name__ == "__main__":
     # print("学习到的字典形状:", D.shape)
 
     """ K-SVD """
-    n_components = 10
 
-    D = np.random.rand(n_components, data.T)
-
-    max_interation = 20
-    for j in range(max_interation):
-
-        """ 代替FOCUSS """
-        # if j == 0:
-        if True:
-            A = np.zeros((len(data.row_all_right), n_components))
-            for i in range(len(data.row_all_right)):
-                # A[i, :], _ = nnls(D.T, X[i, :].T)
-                A[i, :] = focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=100, eps=1e-6)
-
-        print(MSE(X, A @ D))
-
-        for k in range(n_components):
-            non_zeros_set = A[:, k] > 0
-            non_zeros_set_index = np.where(non_zeros_set)
-            if any(non_zeros_set):
-                E_mat = X - A @ D + A[:, k].reshape(-1, 1) @ D[k, :].reshape(1, -1)
-
-                E_mat_restricted = E_mat[non_zeros_set, :]
-
-                U, S, VT = np.linalg.svd(E_mat_restricted)
-
-                a = U[:, 0]
-                d = VT[0, :]
-
-                if np.sum(a > 0) < np.sum(a < 0):
-                    a = -a
-                    d = -d
-
-                a[a < 0] = 0
-                d[d < 0] = 0
-
-                a = a.reshape(1, -1)
-                d = d.reshape(-1, 1)
-
-                max_interation_svd = 3
-                for jj in range(max_interation_svd):
-                    d = (a @ E_mat_restricted) / (a @ a.T)
-                    if np.sum(d > 0) < np.sum(d < 0):
-                        a = -a
-                        d = -d
-                    d[d < 0] = 0
-                    d = d.reshape(-1, 1)
-                    a = (E_mat_restricted @ d) / (d.T @ d)
-                    if np.sum(a > 0) < np.sum(a < 0):
-                        a = -a
-                        d = -d
-                    a[a < 0] = 0
-                    a = a.reshape(1, -1)
-
-                D[k, :] = d.T
-                A[non_zeros_set, k] = a.T.reshape(-1)
 
     # ksvd_model = KSVD(
     #     n_components=n_components,
