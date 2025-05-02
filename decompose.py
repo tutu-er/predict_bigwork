@@ -1,0 +1,192 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from vmdpy import VMD
+
+from sklearn.decomposition import DictionaryLearning
+from sklearn.linear_model import orthogonal_mp
+from sklearn.datasets import make_sparse_coded_signal
+from sklearn.metrics import mean_squared_error as MSE
+from scipy.optimize import nnls
+
+from data import Data
+
+class KSVD:
+    def __init__(self, n_components, D_init):
+        self.D = D_init
+        self.n_components = n_components
+
+
+import numpy as np
+
+
+def focuss_plus(A, y, lambda_max=1e3, p=1, max_iter=100, eps=1e-6):
+    """
+    FOCUSS算法实现
+    参数:
+        A : 测量矩阵 (m x n, m < n)
+        y : 观测向量 (m x 1)
+        p : 权重指数 (默认1)
+        max_iter : 最大迭代次数
+        eps : 收敛阈值
+    返回:
+        x : 稀疏解 (n x 1)
+    """
+    m, n = A.shape
+    x = np.linalg.pinv(A) @ y  # 初始化解
+    prev_x = x.copy()
+
+    for _ in range(max_iter):
+        # 构建权重矩阵 (避免除零)
+        abs_x = np.abs(x)
+        abs_x[abs_x < 1e-10] = 1e-10  # 防止零值导致权重矩阵奇异
+        W = np.diag(abs_x ** (2 - p))
+
+        lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
+        # 更新解
+        x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
+
+        x[x < 0] = 0
+        # 检查收敛
+        if np.linalg.norm(x - prev_x) < eps:
+            break
+        prev_x = x.copy()
+
+    return x
+
+if __name__ == "__main__":
+
+    data = Data('STLF_DATA_IN_1.xls')
+
+    """ VMD """
+    t = np.linspace(0, 1, 1000)
+    signal = np.sin(2 * np.pi * 5 * t) + np.sin(2 * np.pi * 20 * t)
+
+    # VMD 参数设置
+    alpha = 2000  # 模态带宽约束（影响模态中心频率的紧密性）
+    tau = 0.0  # 噪声容忍度（通常设为 0）
+    K = 2  # 分解的模态数
+    DC = 0  # 是否包含直流分量（0 表示不包含）
+    init = 1  # 初始化方法（1 为均匀分布）
+    tol = 1e-7  # 收敛容差
+
+    # 执行 VMD
+    u, u_hat, omega = VMD(signal, alpha, tau, K, DC, init, tol)
+
+    # plt.plot(u[0, :])
+    # plt.plot(u[1, :])
+    # plt.plot(u[0, :] + u[1,:])
+    # plt.plot(signal)
+    #
+    # plt.show()
+
+    """ DictionaryLearning """
+    n_components = 20  # 字典原子数
+
+    X = data.np_day_pd_96[data.row_all_right, :]
+
+    # 初始化字典学习模型（使用OMP稀疏编码）
+    dict_learner = DictionaryLearning(
+        n_components=n_components,
+        alpha=0.1,  # 稀疏性约束（L1正则化系数）
+        max_iter=100,  # 最大迭代次数
+        fit_algorithm='cd',  # 坐标下降法求解稀疏编码
+        transform_algorithm='omp',  # 正交匹配追踪
+        random_state=42
+    )
+
+    # 训练字典
+    D = dict_learner.fit(X).components_
+
+    gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
+
+
+
+    # X_reconstructed = gamma @ D
+
+    # for i in range(n_components):
+    #     plt.plot(D[i,:])
+
+    # plt.plot(D[1, :])
+    # plt.show()
+    # 输出字典和稀疏编码
+    # print("学习到的字典形状:", D.shape)
+
+    """ K-SVD """
+    n_components = 10
+
+    D = np.random.rand(n_components, data.T)
+
+    max_interation = 20
+    for j in range(max_interation):
+
+        """ 代替FOCUSS """
+        # if j == 0:
+        if True:
+            A = np.zeros((len(data.row_all_right), n_components))
+            for i in range(len(data.row_all_right)):
+                # A[i, :], _ = nnls(D.T, X[i, :].T)
+                A[i, :] = focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=100, eps=1e-6)
+
+        print(MSE(X, A @ D))
+
+        for k in range(n_components):
+            non_zeros_set = A[:, k] > 0
+            non_zeros_set_index = np.where(non_zeros_set)
+            if any(non_zeros_set):
+                E_mat = X - A @ D + A[:, k].reshape(-1, 1) @ D[k, :].reshape(1, -1)
+
+                E_mat_restricted = E_mat[non_zeros_set, :]
+
+                U, S, VT = np.linalg.svd(E_mat_restricted)
+
+                a = U[:, 0]
+                d = VT[0, :]
+
+                if np.sum(a > 0) < np.sum(a < 0):
+                    a = -a
+                    d = -d
+
+                a[a < 0] = 0
+                d[d < 0] = 0
+
+                a = a.reshape(1, -1)
+                d = d.reshape(-1, 1)
+
+                max_interation_svd = 3
+                for jj in range(max_interation_svd):
+                    d = (a @ E_mat_restricted) / (a @ a.T)
+                    if np.sum(d > 0) < np.sum(d < 0):
+                        a = -a
+                        d = -d
+                    d[d < 0] = 0
+                    d = d.reshape(-1, 1)
+                    a = (E_mat_restricted @ d) / (d.T @ d)
+                    if np.sum(a > 0) < np.sum(a < 0):
+                        a = -a
+                        d = -d
+                    a[a < 0] = 0
+                    a = a.reshape(1, -1)
+
+                D[k, :] = d.T
+                A[non_zeros_set, k] = a.T.reshape(-1)
+
+    # ksvd_model = KSVD(
+    #     n_components=n_components,
+    #     max_iter=50,  # 最大迭代次数
+    #     tol=1e-6,  # 收敛容差
+    #     n_nonzero_coefs=5  # 稀疏编码的非零系数数量
+    # )
+    #
+    # # 训练字典
+    # D = ksvd_model.fit(X).dictionary_
+    #
+    # gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
+    #
+    # X_reconstructed = gamma @ D
+
+
+
+    pass
+
+
+
