@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import csv
 from vmdpy import VMD
 
 from sklearn.decomposition import DictionaryLearning
@@ -18,22 +19,21 @@ class KSVD:
         self.max_iteration = max_iteration
         self.max_iteration_svd = max_iteration_svd
         self.D = self.random_init_D()
-        self.A = self.data_focuss(self.D, self.X)
+        # self.A = self.data_focuss(self.D, self.X)
 
     def random_init_D(self):
         return np.random.rand(self.n_components, self.X.shape[1])
 
-    def fit(self, X):
-        for j in range(self.max_interation):
-
-            A = self.data_focuss(X,self.D)
-
+    def fit(self):
+        for j in range(self.max_iteration):
+            A = self.data_focuss(self.D, self.X)
+            print(MSE(self.X, A @ self.D))
             for k in range(n_components):
                 non_zeros_set = A[:, k] > 0
                 if any(non_zeros_set):
-                    E_mat = X - A @ D + A[:, k].reshape(-1, 1) @ D[k, :].reshape(1, -1)
+                    E_mat = self.X - A @ self.D + A[:, k].reshape(-1, 1) @ self.D[k, :].reshape(1, -1)
                     E_mat_restricted = E_mat[non_zeros_set, :]
-                    U, _, VT = np.linalg.svd(E_mat_restricted)
+                    U, s, VT = np.linalg.svd(E_mat_restricted)
 
                     a = U[:, 0]
                     d = VT[0, :]
@@ -48,7 +48,7 @@ class KSVD:
                     a = a.reshape(1, -1)
                     d = d.reshape(-1, 1)
 
-                    for _ in range(self.max_interation_svd):
+                    for _ in range(self.max_iteration_svd):
                         d = (a @ E_mat_restricted) / (a @ a.T)
                         if np.sum(d > 0) < np.sum(d < 0):
                             a = -a
@@ -61,8 +61,13 @@ class KSVD:
                             d = -d
                         a[a < 0] = 0
                         a = a.reshape(1, -1)
-                    D[k, :] = d.T
-        return D, A
+
+                    d = d/np.abs(s[0])
+                    a = a*np.abs(s[0])
+
+                    self.D[k, :] = d.T
+
+        return self.D, A
 
     def data_focuss(self, D, X):
         A = np.zeros((X.shape[0], n_components))
@@ -80,10 +85,8 @@ class KSVD:
             abs_x[abs_x < 1e-10] = 1e-10
             W = np.diag(abs_x ** (2 - p))
             W[W < 1e-8] = 0
-
             lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
             x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
-
             x[x < 0] = 0
             if np.linalg.norm(x - prev_x) < eps:
                 break
@@ -137,8 +140,6 @@ if __name__ == "__main__":
 
     gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
 
-
-
     # X_reconstructed = gamma @ D
 
     # for i in range(n_components):
@@ -155,12 +156,21 @@ if __name__ == "__main__":
     ksvd_model = KSVD(
         data = X,
         n_components = 20, 
-        max_iteration = 20, 
+        max_iteration = 10,
         max_iteration_svd = 3
     )
+    D, A = ksvd_model.fit()
 
-    D, A = ksvd_model.fit(X)
+    # 写入CSV文件
+    with open("D.csv", mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file)
+        for row in D:
+            writer.writerow(row)
 
+    with open("A.csv", mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file)
+        for row in A:
+            writer.writerow(row)
 
     pass
 
