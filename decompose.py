@@ -11,32 +11,29 @@ from scipy.optimize import nnls
 from data import Data
 
 class KSVD:
-    def __init__(self, n_components, data):
+    def __init__(self, data, n_components = 20, max_iteration = 20, max_iteration_svd = 3):
 
         self.D = self.random_init_D()
         self.X = data
         self.n_components = n_components
+        self.max_iteration = max_iteration
+        self.max_iteration_svd = max_iteration_svd
         self.A = self.data_focuss(self.D, self.X)
 
+    def random_init_D(self):
+        return np.random.rand(self,n_components, self.X.shape[1])
+
     def fit(self, X):
-        n_components = 10
+        for j in range(self.max_interation):
 
-        D = np.random.rand(n_components, data.T)
-
-        max_interation = 20
-        for j in range(max_interation):
-
-            self.data_focuss(X,self.D)
+            A = self.data_focuss(X,self.D)
 
             for k in range(n_components):
                 non_zeros_set = A[:, k] > 0
-                non_zeros_set_index = np.where(non_zeros_set)
                 if any(non_zeros_set):
                     E_mat = X - A @ D + A[:, k].reshape(-1, 1) @ D[k, :].reshape(1, -1)
-
                     E_mat_restricted = E_mat[non_zeros_set, :]
-
-                    U, S, VT = np.linalg.svd(E_mat_restricted)
+                    U, _, VT = np.linalg.svd(E_mat_restricted)
 
                     a = U[:, 0]
                     d = VT[0, :]
@@ -51,8 +48,7 @@ class KSVD:
                     a = a.reshape(1, -1)
                     d = d.reshape(-1, 1)
 
-                    max_interation_svd = 3
-                    for jj in range(max_interation_svd):
+                    for _ in range(self.max_interation_svd):
                         d = (a @ E_mat_restricted) / (a @ a.T)
                         if np.sum(d > 0) < np.sum(d < 0):
                             a = -a
@@ -65,9 +61,7 @@ class KSVD:
                             d = -d
                         a[a < 0] = 0
                         a = a.reshape(1, -1)
-
                     D[k, :] = d.T
-                    A[non_zeros_set, k] = a.T.reshape(-1)
 
     def data_focuss(self, D, X):
         A = np.zeros((X.shape[0], n_components))
@@ -77,7 +71,6 @@ class KSVD:
         return A
 
     def focuss_plus(self, A, y, lambda_max=1e3, p=1, max_iter=100, eps=1e-6):
-        m, n = A.shape
         x = np.linalg.pinv(A) @ y  # 初始化解
         prev_x = x.copy()
 
@@ -88,11 +81,9 @@ class KSVD:
             W[W < 1e-8] = 0
 
             lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
-            # 更新解
             x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
 
             x[x < 0] = 0
-            # 检查收敛
             if np.linalg.norm(x - prev_x) < eps:
                 break
             prev_x = x.copy()
@@ -158,21 +149,15 @@ if __name__ == "__main__":
     # print("学习到的字典形状:", D.shape)
 
     """ K-SVD """
+    X = data.np_day_pd_96[data.row_all_right, :]
 
+    ksvd_model = KSVD(
+        data = X,
+        n_components = 20, 
+        max_iteration = 20, 
+        max_iteration_svd = 3
+    )
 
-    # ksvd_model = KSVD(
-    #     n_components=n_components,
-    #     max_iter=50,  # 最大迭代次数
-    #     tol=1e-6,  # 收敛容差
-    #     n_nonzero_coefs=5  # 稀疏编码的非零系数数量
-    # )
-    #
-    # # 训练字典
-    # D = ksvd_model.fit(X).dictionary_
-    #
-    # gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
-    #
-    # X_reconstructed = gamma @ D
 
 
 
