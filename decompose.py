@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import csv
+
+import pandas as pd
 from vmdpy import VMD
 
 from sklearn.decomposition import DictionaryLearning
@@ -24,12 +26,15 @@ class KSVD:
     def random_init_D(self):
         return np.random.rand(self.n_components, self.X.shape[1])
 
-    def fit(self):
+    def fit(self, iter_focuss=False, every_focuss = 50):
+        A = self.data_focuss(self.D, self.X)
         for j in range(self.max_iteration):
-            A = self.data_focuss(self.D, self.X)
+            if iter_focuss and j > 0 :
+                if j % every_focuss == 0:
+                    A = self.data_focuss(self.D, self.X)
             print(MSE(self.X, A @ self.D))
-            for k in range(n_components):
-                non_zeros_set = A[:, k] > 0
+            for k in range(self.n_components):
+                non_zeros_set = A[:, k] > 1e-8
                 if any(non_zeros_set):
                     E_mat = self.X - A @ self.D + A[:, k].reshape(-1, 1) @ self.D[k, :].reshape(1, -1)
                     E_mat_restricted = E_mat[non_zeros_set, :]
@@ -66,18 +71,19 @@ class KSVD:
                     a = a*np.abs(s[0])
 
                     self.D[k, :] = d.T
+                    A[non_zeros_set, k] = a.T.reshape(-1)
 
         return self.D, A
 
     def data_focuss(self, D, X):
-        A = np.zeros((X.shape[0], n_components))
+        A = np.zeros((X.shape[0], self.n_components))
         for i in range(len(data.row_all_right)):
-            A[i, :] = self.focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=100, eps=1e-6)
+            A[i, :] = self.focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=200, eps=1e-6)
         
         return A
 
     def focuss_plus(self, A, y, lambda_max=1e3, p=1, max_iter=100, eps=1e-6):
-        x = np.linalg.pinv(A) @ y  # 初始化解
+        x = np.linalg.pinv(A) @ y  # 初始化解2
         prev_x = x.copy()
 
         for _ in range(max_iter):
@@ -85,7 +91,7 @@ class KSVD:
             abs_x[abs_x < 1e-10] = 1e-10
             W = np.diag(abs_x ** (2 - p))
             W[W < 1e-8] = 0
-            lambda_k = lambda_max * (1 - np.linalg.norm(y - A @ x)/np.linalg.norm(y))
+            lambda_k = np.abs(lambda_max * (1 - np.linalg.norm(y - A @ x) / np.linalg.norm(y) ) )
             x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
             x[x < 0] = 0
             if np.linalg.norm(x - prev_x) < eps:
@@ -121,24 +127,24 @@ if __name__ == "__main__":
     # plt.show()
 
     """ DictionaryLearning """
-    n_components = 20  # 字典原子数
-
-    X = data.np_day_pd_96[data.row_all_right, :]
-
-    # 初始化字典学习模型（使用OMP稀疏编码）
-    dict_learner = DictionaryLearning(
-        n_components=n_components,
-        alpha=0.1,  # 稀疏性约束（L1正则化系数）
-        max_iter=100,  # 最大迭代次数
-        fit_algorithm='cd',  # 坐标下降法求解稀疏编码
-        transform_algorithm='omp',  # 正交匹配追踪
-        random_state=42
-    )
-
-    # 训练字典
-    D = dict_learner.fit(X).components_
-
-    gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
+    # n_components = 20  # 字典原子数
+    #
+    # X = data.np_day_pd_96[data.row_all_right, :]
+    #
+    # # 初始化字典学习模型（使用OMP稀疏编码）
+    # dict_learner = DictionaryLearning(
+    #     n_components=n_components,
+    #     alpha=0.1,  # 稀疏性约束（L1正则化系数）
+    #     max_iter=100,  # 最大迭代次数
+    #     fit_algorithm='cd',  # 坐标下降法求解稀疏编码
+    #     transform_algorithm='omp',  # 正交匹配追踪
+    #     random_state=42
+    # )
+    #
+    # # 训练字典
+    # D = dict_learner.fit(X).components_
+    #
+    # gamma = orthogonal_mp(D.T, X.T, n_nonzero_coefs=5).T
 
     # X_reconstructed = gamma @ D
 
@@ -153,24 +159,36 @@ if __name__ == "__main__":
     """ K-SVD """
     X = data.np_day_pd_96[data.row_all_right, :]
 
+    n_components = 5
+    max_iteration = 1000
+    max_iteration_svd = 3
+
     ksvd_model = KSVD(
         data = X,
-        n_components = 20, 
-        max_iteration = 10,
-        max_iteration_svd = 3
+        n_components = n_components,
+        max_iteration = max_iteration,
+        max_iteration_svd = max_iteration_svd
     )
-    D, A = ksvd_model.fit()
+    D, A = ksvd_model.fit(iter_focuss=True, every_focuss=100)
 
-    # 写入CSV文件
-    with open("D.csv", mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file)
+    with open("D_ksvd.csv", mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
         for row in D:
             writer.writerow(row)
 
-    with open("A.csv", mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file)
+    with open("A_ksvd.csv", mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
         for row in A:
             writer.writerow(row)
+
+    D = pd.read_csv('D_ksvd.csv', header=None).to_numpy()
+    A = pd.read_csv('A_ksvd.csv', header=None).to_numpy()
+    for i in range(n_components):
+        plt.plot(D[i,:])
+
+    plt.plot(D[1, :])
+    plt.show()
+    print("学习到的字典形状:", D.shape)
 
     pass
 
