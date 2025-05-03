@@ -13,15 +13,15 @@ from data import Data
 class KSVD:
     def __init__(self, data, n_components = 20, max_iteration = 20, max_iteration_svd = 3):
 
-        self.D = self.random_init_D()
         self.X = data
         self.n_components = n_components
         self.max_iteration = max_iteration
         self.max_iteration_svd = max_iteration_svd
+        self.D = self.random_init_D()
         self.A = self.data_focuss(self.D, self.X)
 
     def random_init_D(self):
-        return np.random.rand(self,n_components, self.X.shape[1])
+        return np.random.rand(self.n_components, self.X.shape[1])
 
     def fit(self, X):
         for j in range(self.max_interation):
@@ -62,6 +62,7 @@ class KSVD:
                         a[a < 0] = 0
                         a = a.reshape(1, -1)
                     D[k, :] = d.T
+        return D, A
 
     def data_focuss(self, D, X):
         A = np.zeros((X.shape[0], n_components))
@@ -158,7 +159,7 @@ if __name__ == "__main__":
         max_iteration_svd = 3
     )
 
-
+    D, A = ksvd_model.fit(X)
 
 
     pass
