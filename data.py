@@ -98,8 +98,8 @@ class Data:
         weekend_onehot = np.zeros(len(date))
         weekend_onehot[weekend] = 1
 
-        spring_fes_onehot = [Data.during_lunar_new_year(date_i) for date_i in date_li]
-        spring_fes = np.where(np.array(spring_fes_onehot) >= 1)[0].tolist()
+        spring_fes_onehot = np.array([Data.during_lunar_new_year(date_i) for date_i in date_li])
+        spring_fes = np.where(spring_fes_onehot >= 1)[0].tolist()
 
         # 提取年份、月份和星期
         df = date_pd.to_frame(name='date')
