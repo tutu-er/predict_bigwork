@@ -24,7 +24,7 @@ class Data:
         self.weather = self.deal_weather_data()
 
         (self.weekend, self.weekend_onehot, self.weekend_and_holiday, self.weekend_and_holiday_onehot,
-         self.spring_fes, self.spring_fes_onehot, self.date_info) = self.deal_time_onehot()
+         self.spring_fes, self.spring_fes_onehot,self.date_one_hot, self.date_info) = self.deal_time_onehot()
 
     def deal_pd_data(self):
         df_date = self.df_pd.iloc[:, 0]
@@ -45,6 +45,12 @@ class Data:
 
     def deal_weather_data(self):
         df_weather = self.df_weather
+        df_occupy = self.df_date.to_frame(name=0)
+        df_occupy[1] = 0
+        df_occupy[2] = np.nan
+
+        df_weather = pd.concat([df_weather, df_occupy], ignore_index=True)
+
         df_weather_pivot = df_weather.pivot(index=0, columns=1, values=2)
 
         # wash data
@@ -54,6 +60,8 @@ class Data:
 
         df_weather_pivot.loc[(df_weather_pivot.loc[:, '最低温度'] == 0) & (df_weather_pivot.loc[:, '最高温度'] == 0),
                 ('最低温度', '平均温度', '最高温度')] = np.nan
+
+        df_weather_pivot = df_weather_pivot.drop(0, axis=1)
 
         return df_weather_pivot
 
@@ -93,8 +101,18 @@ class Data:
         spring_fes_onehot = [Data.during_lunar_new_year(date_i) for date_i in date_li]
         spring_fes = np.where(np.array(spring_fes_onehot) >= 1)[0].tolist()
 
+        # 提取年份、月份和星期
+        df = date_pd.to_frame(name='date')
+
+        df['year'] = df['date'].dt.year
+        df['month'] = df['date'].dt.month
+        df['weekday'] = df['date'].dt.weekday
+
+        df_one_hot = pd.get_dummies(df, columns=['year', 'month', 'weekday'])
+        date_one_hot = df_one_hot.iloc[:, 1:].to_numpy().astype(int)
+
         return (weekend, weekend_onehot, weekend_and_holiday, weekend_and_holiday_onehot, spring_fes, spring_fes_onehot,
-                date_pd)
+                date_one_hot, date_pd)
 
     @ staticmethod
     def deal_pu(data, row_error, type='mean'):

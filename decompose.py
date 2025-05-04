@@ -29,9 +29,10 @@ class KSVD:
         self.focuss_eps = focuss_eps
 
     def random_init_D(self):
-        D = np.random.rand(self.n_components-1, self.X.shape[1])
-        D = np.concatenate((D, np.ones((1, self.X.shape[1])) * 0.5), axis=0)
-        return D
+        # D = np.random.rand(self.n_components-1, self.X.shape[1])
+        # D = np.concatenate((D, np.ones((1, self.X.shape[1])) * 0.5), axis=0)
+        # return D
+        return np.random.rand(self.n_components, self.X.shape[1])
 
     def fit(self, iter_focuss=False, every_focuss = 50):
         A = self.data_focuss(self.D, self.X)
