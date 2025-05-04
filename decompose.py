@@ -14,7 +14,8 @@ from scipy.optimize import nnls
 from data import Data
 
 class KSVD:
-    def __init__(self, data, n_components = 20, max_iteration = 20, max_iteration_svd = 3):
+    def __init__(self, data, n_components = 20, max_iteration = 20, max_iteration_svd = 3,
+                 focuss_lambda_max = 1e3, focuss_p = 1, focuss_max_iter = 200, focuss_eps = 1e-6):
 
         self.X = data
         self.n_components = n_components
@@ -22,9 +23,15 @@ class KSVD:
         self.max_iteration_svd = max_iteration_svd
         self.D = self.random_init_D()
         # self.A = self.data_focuss(self.D, self.X)
+        self.focuss_lambda_max = focuss_lambda_max
+        self.focuss_p = focuss_p
+        self.focuss_max_iter = focuss_max_iter
+        self.focuss_eps = focuss_eps
 
     def random_init_D(self):
-        return np.random.rand(self.n_components, self.X.shape[1])
+        D = np.random.rand(self.n_components-1, self.X.shape[1])
+        D = np.concatenate((D, np.ones((1, self.X.shape[1])) * 0.5), axis=0)
+        return D
 
     def fit(self, iter_focuss=False, every_focuss = 50):
         A = self.data_focuss(self.D, self.X)
@@ -127,12 +134,13 @@ class KSVD:
 
     def data_focuss(self, D, X):
         A = np.zeros((X.shape[0], self.n_components))
-        for i in range(len(data.row_all_right)):
-            A[i, :] = self.focuss_plus(D.T, X[i, :].T, lambda_max=1e3, p=1, max_iter=200, eps=1e-6)
+        for i in range(X.shape[0]):
+            A[i, :] = self.focuss_plus(D.T, X[i, :].T, lambda_max=self.focuss_lambda_max,
+                                       p=self.focuss_p, max_iter=self.focuss_max_iter, eps=self.focuss_eps)
         
         return A
 
-    def focuss_plus(self, A, y, lambda_max=1e6, p=1, max_iter=100, eps=1e-6):
+    def focuss_plus(self, A, y, lambda_max=1e5, p=1, max_iter=100, eps=1e-6):
         x = np.linalg.pinv(A) @ y  # 初始化解2
         prev_x = x.copy()
 
@@ -143,7 +151,7 @@ class KSVD:
             W[W < 1e-8] = 0
             lambda_k = np.abs(lambda_max * (1 - np.linalg.norm(y - A @ x) / np.linalg.norm(y) ) )
             x = W @ A.T @ np.linalg.inv(lambda_k * np.eye(A.shape[0]) + A @ W @ A.T) @ y
-            x[x < 0] = 0
+            x[x < 1] = 0
             if np.linalg.norm(x - prev_x) < eps:
                 break
             prev_x = x.copy()
@@ -207,45 +215,52 @@ if __name__ == "__main__":
     # print("学习到的字典形状:", D.shape)
 
     """ K-SVD """
+    row_normal = [i for i in range(data.days) if i in data.row_all_right and not i in data.weekend_and_holiday]
+
+    # X = data.np_day_pd_96[row_normal, :]
     X = data.np_day_pd_96[data.row_all_right, :]
 
     n_components = 10
     max_iteration = 1200
-    max_iteration_svd = 3
+    max_iteration_svd = 2
 
     ksvd_model = KSVD(
         data = X,
         n_components = n_components,
         max_iteration = max_iteration,
-        max_iteration_svd = max_iteration_svd
+        max_iteration_svd = max_iteration_svd,
+        focuss_lambda_max = 1e5,
+        focuss_p = 1,
+        focuss_max_iter = 200,
+        focuss_eps = 1e-6
     )
-    # D, A = ksvd_model.fit(iter_focuss=True, every_focuss=300)
+    D, A = ksvd_model.fit(iter_focuss=True, every_focuss=300)
 
-    # with open(f'D_ksvd_{n_components}.csv', mode='w', newline='', encoding='utf-8') as file:
-    #     writer = csv.writer(file)
-    #     for row in D:
-    #         writer.writerow(row)
-    #
-    # with open(f'A_ksvd_{n_components}.csv', mode='w', newline='', encoding='utf-8') as file:
-    #     writer = csv.writer(file)
-    #     for row in A:
-    #         writer.writerow(row)
-
-    D = pd.read_csv(f'D_ksvd_{n_components}.csv', header=None).to_numpy()
-    A = pd.read_csv(f'A_ksvd_{n_components}.csv', header=None).to_numpy()
-
-    ksvd_model.D = D
-    D, A = ksvd_model.load_and_fit(A, iter_times = 500, iter_focuss= True, every_focuss = 1000)
-
-    with open(f'D_ksvd_{n_components}_test.csv', mode='w', newline='', encoding='utf-8') as file:
+    with open(f'D_ksvd_{n_components}_normal.csv', mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         for row in D:
             writer.writerow(row)
 
-    with open(f'A_ksvd_{n_components}_test.csv', mode='w', newline='', encoding='utf-8') as file:
+    with open(f'A_ksvd_{n_components}_normal.csv', mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         for row in A:
             writer.writerow(row)
+
+    D = pd.read_csv(f'D_ksvd_{n_components}_normal.csv', header=None).to_numpy()
+    A = pd.read_csv(f'A_ksvd_{n_components}_normal.csv', header=None).to_numpy()
+
+    # ksvd_model.D = D
+    # D, A = ksvd_model.load_and_fit(A, iter_times = 2, iter_focuss= True, every_focuss = 1000)
+    #
+    # with open(f'D_ksvd_{n_components}_test.csv', mode='w', newline='', encoding='utf-8') as file:
+    #     writer = csv.writer(file)
+    #     for row in D:
+    #         writer.writerow(row)
+    #
+    # with open(f'A_ksvd_{n_components}_test.csv', mode='w', newline='', encoding='utf-8') as file:
+    #     writer = csv.writer(file)
+    #     for row in A:
+    #         writer.writerow(row)
 
     for i in range(n_components):
         plt.plot(D[i,:])
